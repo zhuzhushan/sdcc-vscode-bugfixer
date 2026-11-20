@@ -1,0 +1,18 @@
+{"name":"sdcc-vscode-bugfixer",
+"displayName": "SDCC VSCode Bug Fixer",
+"version":"0.0.1",
+"publisher": "XXXXModefile When i publisher on github ",
+"engines": {
+    "vscode": "^1.105.0"
+},
+"categories": ["Other"],
+"main": "./src/extension.js",
+"contributes": {
+  "commands": [
+{
+"command": "sdcc-vscode-bugfixer.fixIntellisense",    
+"title": "SDCC:fix IntelliSense bugs(input shim)"
+}
+]
+}
+}
