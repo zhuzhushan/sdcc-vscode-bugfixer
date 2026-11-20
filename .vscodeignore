@@ -1,5 +1,7 @@
+.git/**
 .vscode/**
 .vscode-test/**
-src/**
-!src/extension.js
+node_modules/**
+test/**
 **/*.map
+**/*.ts

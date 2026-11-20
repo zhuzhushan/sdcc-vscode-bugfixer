@@ -1,18 +1,25 @@
-{"name":"sdcc-vscode-bugfixer",
-"displayName": "SDCC VSCode Bug Fixer",
-"version":"0.0.1",
-"publisher": "XXXXModefile When i publisher on github ",
-"engines": {
-    "vscode": "^1.105.0"
-},
-"categories": ["Other"],
-"main": "./src/extension.js",
-"contributes": {
-  "commands": [
 {
-"command": "sdcc-vscode-bugfixer.fixIntellisense",    
-"title": "SDCC:fix IntelliSense bugs(input shim)"
-}
-]
-}
+  "name": "sdcc-vscode-bugfixer",
+  "displayName": "SDCC VSCode Bug Fixer",
+  "description": "一键修复 SDCC 方言(__sbit/__interrupt 等)在 VS Code 中的 IntelliSense 红线，零污染编译产物",
+  "version": "0.0.5",
+  "publisher": "zhuzhushan",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": ["Other", "Linters"],
+  "keywords": ["sdcc", "8051", "stc", "platformio", "intellisense", "c_cpp"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhutou/sdcc-vscode-bugfixer.git"
+  },
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sdcc-vscode-bugfixer.fixIntellisense",
+        "title": "SDCC: fix IntelliSense bugs (inject shim + includePath)"
+      }
+    ]
+  }
 }
