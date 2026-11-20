@@ -44,7 +44,41 @@ function activate(context) {
         const configFile = path.join(vscodeDir, 'c_cpp_properties.json');
 
         // 1. 生成垫片文件 (如果不存在)
-        const shimContent = `#ifndef __SDCC_SHIM_H__\n#define __SDCC_SHIM_H__\n#define __sbit  unsigned char\n#define __sfr   unsigned char\n#define __idata\n#define __xdata\n#define __code\n#define __data\n#define __at(x)\n#endif\n`;
+               const shimContent = `#ifndef __SDCC_SHIM_H__
+#define __SDCC_SHIM_H__
+
+// 【光耦保护】：SDCC 真编译器会自动定义 __SDCC，从而跳过下面所有宏，
+// 保证垫片只骗 VS Code 的眼睛，绝不污染 SDCC 的编译！
+#ifndef __SDCC
+
+    // A 类：变量类型修饰符（伪装成标准类型）
+    #define __sbit   unsigned char
+    #define __bit    unsigned char
+    #define __sfr    unsigned char
+    #define __sfr16  unsigned int
+    #define __sfr32  unsigned long
+
+    // B 类：内存区域修饰符（定义为空）
+    #define __idata
+    #define __xdata
+    #define __code
+    #define __data
+    #define __near
+    #define __far
+
+    // C 类 + D 类：带参数宏（必须带括号，才能吞掉 __at(0x89) / __interrupt(1) 里的参数）
+    #define __at(x)
+    #define __interrupt(x)
+    #define __using(x)
+    #define __banked
+    #define __reentrant
+    #define __naked
+    #define __critical
+
+#endif // __SDCC
+
+#endif // __SDCC_SHIM_H__
+`;
         
         // 确保 .vscode 文件夹存在
         if (!fs.existsSync(vscodeDir)) {
