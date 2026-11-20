@@ -1,72 +1,38 @@
-// 【底层原理 1】：require 是什么？
-// 在 Node.js (VS Code 插件的运行环境) 中，require 就像 C 语言的 #include。
-// 它向操作系统申请加载两个核心模块：
-// 1. 'vscode'：这是 VS Code 官方提供的 API 库。它不是一个真实的文件，而是 VS Code 启动时注入到内存里的“虚拟模块”。
-//    通过它，你可以控制 VS Code 的界面（如弹窗、获取路径）。
-// 2. 'fs' (File System)：这是 Node.js 自带的文件操作库。它底层调用的是 Windows/Linux 的系统 API (如 CreateFile, ReadFile)。
-//    通过它，你可以读写硬盘上的文件。
 const vscode = require('vscode');
 const fs = require('fs');
-const path = require('path'); // path 模块用于安全地拼接文件路径（处理 Windows 的 \ 和 Mac 的 /）
+const path = require('path');
+const os = require('os'); // 【新增】引入 os 模块，用于获取用户主目录
 
-/**
- * 【底层原理 2】：activate 函数
- * 这是插件的“入口点”（类似 C 语言的 main 函数）。
- * 当用户在 VS Code 里执行你注册的命令时，VS Code 会首先调用这个 activate 函数。
- * 
- * @param {vscode.ExtensionContext} context 
- * context 是 VS Code 传给插件的“环境上下文”。它包含了插件的存储路径、订阅列表等。
- * 你可以把它理解为插件的“身份证和通行证”。
- */
 function activate(context) {
     console.log('恭喜，你的插件 "sdcc-vscode-bugfixer" 现已激活！');
 
-    // 【底层原理 3】：注册命令
-    // 这行代码告诉 VS Code：“当用户触发 'sdcc-vscode-bugfixer.fixIntellisense' 这个命令时，请执行后面的函数。”
-    // 这个命令 ID 必须和 package.json 里的 "command" 字段完全一致。
     let disposable = vscode.commands.registerCommand('sdcc-vscode-bugfixer.fixIntellisense', function () {
         
-        // 获取当前工作区根目录
-        // workspaceFolders 是一个数组，因为 VS Code 允许同时打开多个文件夹。我们取第一个 [0]。
-        // .uri.fsPath 是把 VS Code 内部的“统一资源标识符 (URI)”转换成操作系统能懂的“绝对路径”（如 F:\gitprojecttest\...）。
         const workspaceFolder = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : null;
-        
         if (!workspaceFolder) {
             vscode.window.showErrorMessage('请先打开一个项目文件夹！');
             return;
         }
 
-        // 【底层原理 4】：路径拼接
-        // 永远不要手动写 "F:\\test\\.vscode"，因为不同操作系统分隔符不同。
-        // path.join 会自动根据当前系统（Windows/Mac/Linux）使用正确的分隔符。
         const vscodeDir = path.join(workspaceFolder, '.vscode');
         const shimFile = path.join(vscodeDir, 'sdcc_shim.h');
         const configFile = path.join(vscodeDir, 'c_cpp_properties.json');
 
         // 1. 生成垫片文件 (如果不存在)
-               const shimContent = `#ifndef __SDCC_SHIM_H__
+        const shimContent = `#ifndef __SDCC_SHIM_H__
 #define __SDCC_SHIM_H__
-
-// 【光耦保护】：SDCC 真编译器会自动定义 __SDCC，从而跳过下面所有宏，
-// 保证垫片只骗 VS Code 的眼睛，绝不污染 SDCC 的编译！
 #ifndef __SDCC
-
-    // A 类：变量类型修饰符（伪装成标准类型）
     #define __sbit   unsigned char
     #define __bit    unsigned char
     #define __sfr    unsigned char
     #define __sfr16  unsigned int
     #define __sfr32  unsigned long
-
-    // B 类：内存区域修饰符（定义为空）
     #define __idata
     #define __xdata
     #define __code
     #define __data
     #define __near
     #define __far
-
-    // C 类 + D 类：带参数宏（必须带括号，才能吞掉 __at(0x89) / __interrupt(1) 里的参数）
     #define __at(x)
     #define __interrupt(x)
     #define __using(x)
@@ -74,79 +40,86 @@ function activate(context) {
     #define __reentrant
     #define __naked
     #define __critical
-
-#endif // __SDCC
-
-#endif // __SDCC_SHIM_H__
+#endif
+#endif
 `;
         
-        // 确保 .vscode 文件夹存在
         if (!fs.existsSync(vscodeDir)) {
-            fs.mkdirSync(vscodeDir, { recursive: true }); // recursive: true 表示如果父目录不存在也一并创建
+            fs.mkdirSync(vscodeDir, { recursive: true });
         }
         
-        // 写文件
         if (!fs.existsSync(shimFile)) {
             fs.writeFileSync(shimFile, shimContent, 'utf8');
         }
 
-        // 2. 字符串精准定位注入 (核心逻辑)
+        // 2. 处理 c_cpp_properties.json
         if (!fs.existsSync(configFile)) {
             vscode.window.showErrorMessage('找不到 c_cpp_properties.json，请先运行 PlatformIO: Rebuild IntelliSense');
             return;
         }
 
-        // 【底层原理 5】：同步读取 (Sync)
-        // readFileSync 会“阻塞”当前线程。也就是说，代码执行到这里会停下来，直到文件读完。
-        // 为什么这里可以用同步？因为这是一个“一键修复”脚本，用户点击后，界面卡死 0.01 秒完全无感。
-        // 但如果你是在写一个每秒处理 1000 个请求的网页服务器，就绝对不能用 Sync，必须用异步 (Async)，否则服务器就瘫痪了。
         let content = fs.readFileSync(configFile, 'utf8');
 
-        // 防重入检测
-        if (content.includes('sdcc_shim.h')) {
-            vscode.window.showInformationMessage('✅ 配置已存在，无需重复注入！');
-            return;
+        // ==========================================
+        // 【新增核心功能】：自动注入 includePath (解决熔断机制)
+        // ==========================================
+        
+        // 构造 SDCC 工具链的 include 路径 (Windows/Mac/Linux 通用)
+        // 例如：C:\Users\YAO\.platformio\packages\toolchain-sdcc\include
+        const sdccIncludeDir = path.join(os.homedir(), '.platformio', 'packages', 'toolchain-sdcc', 'include');
+        
+        // 检查这个路径是否存在 (防呆：万一用户没装 PlatformIO)
+        if (fs.existsSync(sdccIncludeDir)) {
+            // 将路径转换为 JSON 友好的正斜杠格式 (C:/Users/...)
+            const jsonFriendlyPath = sdccIncludeDir.replace(/\\/g, '/');
+            
+            // 检查 JSON 里是否已经包含这个路径
+            if (!content.includes(jsonFriendlyPath)) {
+                console.log('检测到 includePath 缺失 SDCC 路径，正在自动注入...');
+                
+                // 字符串精准定位：找到 "includePath": [
+                const includeKey = '"includePath"';
+                const idx = content.indexOf(includeKey);
+                if (idx !== -1) {
+                    const bracketIdx = content.indexOf('[', idx);
+                    if (bracketIdx !== -1) {
+                        // 构造要插入的路径字符串
+                        const pathInsert = `\n                "${jsonFriendlyPath}",`;
+                        // 插入到 [ 后面
+                        content = content.slice(0, bracketIdx + 1) + pathInsert + content.slice(bracketIdx + 1);
+                    }
+                }
+            }
+        } else {
+            console.warn('未找到 SDCC 工具链路径，跳过 includePath 注入。');
+        }
+        // ==========================================
+
+        // 3. 注入 forcedInclude (垫片)
+        if (!content.includes('sdcc_shim.h')) {
+            const targetKey = '"configurations"';
+            const idx = content.indexOf(targetKey);
+            if (idx !== -1) {
+                const braceIdx = content.indexOf('{', idx);
+                if (braceIdx !== -1) {
+                    const insertText = `\n            // --- SDCC IntelliSense Fix (Auto-Generated by sdcc-vscode-bugfixer) ---\n            "forcedInclude": [\n                "\${workspaceFolder}/.vscode/sdcc_shim.h"\n            ],`;
+                    content = content.slice(0, braceIdx + 1) + insertText + content.slice(braceIdx + 1);
+                }
+            }
         }
 
-        // 寻找 "configurations"
-        const targetKey = '"configurations"';
-        const idx = content.indexOf(targetKey);
-        if (idx === -1) {
-            vscode.window.showErrorMessage('未在配置文件中找到 "configurations" 字段');
-            return;
-        }
+        // 4. 写回文件
+        fs.writeFileSync(configFile, content, 'utf8');
 
-        // 寻找该字段后的第一个 '{'
-        const braceIdx = content.indexOf('{', idx);
-        if (braceIdx === -1) {
-            vscode.window.showErrorMessage('未找到配置块的起始 {');
-            return;
-        }
-
-        // 构造要插入的文本
-        // 注意：这里的 ${workspaceFolder} 前面加了反斜杠 \ 转义，防止 JS 把它当成变量解析。
-        const insertText = `\n            // --- SDCC IntelliSense Fix (Auto-Generated by sdcc-vscode-bugfixer) ---\n            "forcedInclude": [\n                "\${workspaceFolder}/.vscode/sdcc_shim.h"\n            ],`;
-
-        // 最小侵入式拼接
-        const newContent = content.slice(0, braceIdx + 1) + insertText + content.slice(braceIdx + 1);
-
-        // 写回文件
-        fs.writeFileSync(configFile, newContent, 'utf8');
-
-        // 3. 成功提示
-        // showInformationMessage 会在右下角弹出一个绿色提示框。
-        // .then() 是 Promise 的用法，表示“当用户点击提示框的按钮后，执行这里的代码”。
-        vscode.window.showInformationMessage('🎉 修复成功！请按 Ctrl+Shift+P -> "C/C++: Reset IntelliSense Database" 查看效果。', '去重置')
+        // 5. 成功提示
+        vscode.window.showInformationMessage('🎉 修复成功！(已自动补全 includePath + 注入垫片)', '去重置')
             .then(selection => {
                 if (selection === '去重置') {
-                    // executeCommand 可以调用 VS Code 内部的其他命令，这里我们调用了 C/C++ 插件的重置数据库命令。
                     vscode.commands.executeCommand('C_Cpp.ResetDatabase');
                 }
             });
     });
 
-    // 将 disposable 加入订阅列表。
-    // 当插件被禁用或卸载时，VS Code 会自动清理这些注册的资源，防止内存泄漏。
     context.subscriptions.push(disposable);
 }
 
