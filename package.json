@@ -2,7 +2,7 @@
   "name": "sdcc-vscode-bugfixer",
   "displayName": "SDCC VSCode Bug Fixer",
   "description": "一键修复 SDCC 方言在 VS Code 中的 IntelliSense 红线，零污染编译产物 | One-click fix for SDCC dialect IntelliSense errors in VS Code, with zero impact on compiled output",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "zhuzhushan",
   "engines": {
     "vscode": "^1.105.0"
