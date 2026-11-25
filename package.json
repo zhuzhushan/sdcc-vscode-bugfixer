@@ -2,7 +2,7 @@
   "name": "sdcc-vscode-bugfixer",
   "displayName": "SDCC VSCode Bug Fixer",
   "description": "一键修复 SDCC 方言在 VS Code 中的 IntelliSense 红线，零污染编译产物 | One-click fix for SDCC dialect IntelliSense errors in VS Code, with zero impact on compiled output",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "publisher": "zhuzhushan",
   "engines": {
     "vscode": "^1.105.0"
@@ -19,12 +19,25 @@
   },
   "license": "MIT",
   "main": "./src/extension.js",
+  "activationEvents": [
+    "workspaceContains:platformio.ini"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "sdcc-vscode-bugfixer.fixIntellisense",
         "title": "SDCC: fix IntelliSense bugs (inject shim + includePath) | 修复 IntelliSense 报错"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "SDCC VSCode Bug Fixer",
+      "properties": {
+        "sdcc-vscode-bugfixer.autoFixOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically fix IntelliSense config when opening a project. | 打开项目时自动修复 IntelliSense 配置。"
+        }
+      }
+    }
   }
 }

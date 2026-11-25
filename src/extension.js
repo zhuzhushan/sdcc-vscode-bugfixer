@@ -10,8 +10,11 @@ const os = require('os');
 function activate(context) {
     console.log('恭喜，插件 "sdcc-vscode-bugfixer" 已激活！ | Extension "sdcc-vscode-bugfixer" is now active!');
 
-    // 注册命令 | Register the fix command
-    let disposable = vscode.commands.registerCommand('sdcc-vscode-bugfixer.fixIntellisense', function () {
+    // ==========================================
+    // 【修改点 1】提取核心修复逻辑为独立函数
+    // Extract core logic into a standalone function for reuse
+    // ==========================================
+    const runFixSilently = function () {
         const workspaceFolder = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : null;
         if (!workspaceFolder) {
             // 双语错误提示 | Bilingual error message
@@ -32,8 +35,8 @@ function activate(context) {
         // ==========================================
         // 【已修复 | FIXED】include guard 宏名必须与 #ifndef 严格配对
         const shimContent = `
-#ifndef __SDCC_SHIM_H__
-#define __SDCC_SHIM_H__
+#ifndef SDCC_SHIM_H
+#define SDCC_SHIM_H
 #ifndef __SDCC
     #define __sbit   unsigned char
     #define __bit    unsigned char
@@ -61,100 +64,75 @@ function activate(context) {
         }
         fs.writeFileSync(shimFile, shimContent, 'utf8');
 
+        
         // ==========================================
-        // 2. 写入 settings.json（桥 1：forcedInclude）
-        //    Bridge 1: forcedInclude via settings.json (never overwritten by PIO)
+        // 2. 直接修改 c_cpp_properties.json（终极桥接：includePath + forcedInclude）
+        //    Bridge 3: Direct injection into c_cpp_properties.json (Overrides PIO defaults)
         // ==========================================
-        let settings = {};
-        if (fs.existsSync(settingsFile)) {
+        const cppPropertiesFile = path.join(vscodeDir, 'c_cpp_properties.json');
+        // 调用你写好的动态探测函数
+        const sdccIncludeDir = resolveSDCCIncludePath();
+        if (!sdccIncludeDir) {
+            vscode.window.showWarningMessage(
+                '未找到 SDCC 头文件路径。请确认已安装 SDCC，或在 PlatformIO 项目中先编译一次以下载 toolchain-sdcc。 | SDCC headers not found. Ensure SDCC is installed, or build the PlatformIO project once to download toolchain-sdcc.'
+            );
+            return; // 找不到路径则中止，避免写入错误配置
+        }
+        // 跨平台路径变量：根据操作系统只注入生效的那一条，消除无效路径警告
+        // Cross-platform: inject only the valid variable based on OS to eliminate invalid path warnings
+        const homeVar = process.platform === 'win32' ? '${env:USERPROFILE}' : '${env:HOME}';
+        const sdccIncludePaths = [
+            "${workspaceFolder}/**",
+            `${homeVar}/.platformio/packages/toolchain-sdcc/include`
+        ];
+        // 默认模板
+        let cppProperties = {
+            configurations: [
+                {
+                    name: "PlatformIO", // 匹配 PlatformIO 默认生成的配置名
+                    includePath: sdccIncludePaths,
+                    defines: ["__SDCC_mcs51"],
+                    forcedInclude: ["${workspaceFolder}/.vscode/sdcc_shim.h"],
+                    cStandard: "c89",
+                    intelliSenseMode: "linux-gcc-x86",
+                    compilerPath: ""
+                }
+            ],
+            version: 4
+        };
+        // 如果文件已存在，读取并合并，保留用户可能的其他自定义配置
+        if (fs.existsSync(cppPropertiesFile)) {
             try {
-                settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+                const existing = JSON.parse(fs.readFileSync(cppPropertiesFile, 'utf8'));
+                if (existing.configurations && existing.configurations.length > 0) {
+                    // 找到名为 "PlatformIO" 的配置，如果没有则用第一个
+                    let config = existing.configurations.find(c => c.name === "PlatformIO") || existing.configurations[0];
+                    // 确保数组存在
+                    if (!config.includePath) config.includePath = [];
+                    if (!config.forcedInclude) config.forcedInclude = [];
+                    if (!config.defines) config.defines = [];
+                    // 注入我们的路径和宏（去重）
+                    sdccIncludePaths.forEach(p => {
+                        if (!config.includePath.includes(p)) config.includePath.push(p);
+                    });
+                    if (!config.forcedInclude.includes("${workspaceFolder}/.vscode/sdcc_shim.h")) {
+                        config.forcedInclude.push("${workspaceFolder}/.vscode/sdcc_shim.h");
+                    }
+                    if (!config.defines.includes("__SDCC_mcs51")) {
+                        config.defines.push("__SDCC_mcs51");
+                    }
+                    cppProperties = existing; // 使用合并后的结果
+                }
             } catch (e) {
-                console.error('settings.json 解析失败，将重置 | parse failed, resetting');
+                console.error('c_cpp_properties.json 解析失败，将使用默认模板 | parse failed, using default template');
             }
         }
-        settings["C_Cpp.default.forcedInclude"] = ["${workspaceFolder}/.vscode/sdcc_shim.h"];
-        fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 4), 'utf8');
+        // 强制写入文件
+        fs.writeFileSync(cppPropertiesFile, JSON.stringify(cppProperties, null, 4), 'utf8');
+        console.log('已强制更新 c_cpp_properties.json | c_cpp_properties.json forcefully updated');
 
-             // ==========================================
-          // ==========================================
-     // 3. 直接修改 c_cpp_properties.json（终极桥接：includePath + forcedInclude）
-     //    Bridge 3: Direct injection into c_cpp_properties.json (Overrides PIO defaults)
-     // ==========================================
-     const cppPropertiesFile = path.join(vscodeDir, 'c_cpp_properties.json');
-     
-     // 调用你写好的动态探测函数
-     const sdccIncludeDir = resolveSDCCIncludePath();
-     
-     if (!sdccIncludeDir) {
-         vscode.window.showWarningMessage(
-             '未找到 SDCC 头文件路径。请确认已安装 SDCC，或在 PlatformIO 项目中先编译一次以下载 toolchain-sdcc。 | SDCC headers not found. Ensure SDCC is installed, or build the PlatformIO project once to download toolchain-sdcc.'
-         );
-         return; // 找不到路径则中止，避免写入错误配置
-     }
-
-          // 跨平台路径变量：根据操作系统只注入生效的那一条，消除无效路径警告
-     // Cross-platform: inject only the valid variable based on OS to eliminate invalid path warnings
-     const homeVar = process.platform === 'win32' ? '${env:USERPROFILE}' : '${env:HOME}';
-     const sdccIncludePaths = [
-         "${workspaceFolder}/**",
-         `${homeVar}/.platformio/packages/toolchain-sdcc/include`
-     ];
-     
-     // 默认模板
-     let cppProperties = {
-         configurations: [
-             {
-                 name: "PlatformIO", // 匹配 PlatformIO 默认生成的配置名
-                 includePath: sdccIncludePaths,
-                 defines: ["__SDCC_mcs51"],
-                 forcedInclude: ["${workspaceFolder}/.vscode/sdcc_shim.h"],
-                 cStandard: "c89",
-                 intelliSenseMode: "linux-gcc-x86",
-                 compilerPath: ""
-             }
-         ],
-         version: 4
-     };
-
-     // 如果文件已存在，读取并合并，保留用户可能的其他自定义配置
-     if (fs.existsSync(cppPropertiesFile)) {
-         try {
-             const existing = JSON.parse(fs.readFileSync(cppPropertiesFile, 'utf8'));
-             if (existing.configurations && existing.configurations.length > 0) {
-                 // 找到名为 "PlatformIO" 的配置，如果没有则用第一个
-                 let config = existing.configurations.find(c => c.name === "PlatformIO") || existing.configurations[0];
-                 
-                 // 确保数组存在
-                 if (!config.includePath) config.includePath = [];
-                 if (!config.forcedInclude) config.forcedInclude = [];
-                 if (!config.defines) config.defines = [];
-
-                 // 注入我们的路径和宏（去重）
-                 sdccIncludePaths.forEach(p => {
-                     if (!config.includePath.includes(p)) config.includePath.push(p);
-                 });
-                 if (!config.forcedInclude.includes("${workspaceFolder}/.vscode/sdcc_shim.h")) {
-                     config.forcedInclude.push("${workspaceFolder}/.vscode/sdcc_shim.h");
-                 }
-                 if (!config.defines.includes("__SDCC_mcs51")) {
-                     config.defines.push("__SDCC_mcs51");
-                 }
-                 
-                 cppProperties = existing; // 使用合并后的结果
-             }
-         } catch (e) {
-             console.error('c_cpp_properties.json 解析失败，将使用默认模板 | parse failed, using default template');
-         }
-     }
-
-     // 强制写入文件
-     fs.writeFileSync(cppPropertiesFile, JSON.stringify(cppProperties, null, 4), 'utf8');
-     console.log('已强制更新 c_cpp_properties.json | c_cpp_properties.json forcefully updated');
-
-     
         // ==========================================
-        // 4. 更新 .gitignore（保护本地配置）
+        // 3. 更新 .gitignore（保护本地配置）
         //    Protect local configs from being committed
         // ==========================================
         let gitignoreContent = fs.existsSync(gitignoreFile) ? fs.readFileSync(gitignoreFile, 'utf8') : '';
@@ -172,19 +150,39 @@ function activate(context) {
         }
 
         // ==========================================
-        // 5. 成功提示 + 联动重置 | Success toast + reset action
+        // 4. 成功提示 + 联动重置 | Success toast + reset action
         // ==========================================
         vscode.window.showInformationMessage(
             '🎉 修复成功！已强制注入 c_cpp_properties.json + .gitignore | Fix complete! c_cpp_properties.json + .gitignore configured',
-         '去重置 / Reset'   // 双语按钮 | Bilingual button label
+            '去重置 / Reset'   // 双语按钮 | Bilingual button label
         ).then(selection => {
             if (selection === '去重置 / Reset') {
                 vscode.commands.executeCommand('C_Cpp.ResetDatabase');
             }
         });
-    });
+    };
 
+    // 注册命令 | Register the fix command
+    let disposable = vscode.commands.registerCommand('sdcc-vscode-bugfixer.fixIntellisense', runFixSilently);
     context.subscriptions.push(disposable);
+
+    // ==========================================
+    // 【修改点 2】读取配置并决定是否自动执行
+    // Read config and decide whether to auto-run
+    // ==========================================
+    const config = vscode.workspace.getConfiguration('sdcc-vscode-bugfixer');
+    // 默认值为 true，如果 package.json 里没配这个开关，也会自动运行
+    const autoFixOnOpen = config.get('autoFixOnOpen', true);
+
+    if (autoFixOnOpen) {
+        console.log('自动修复已开启，正在后台运行... | Auto-fix is enabled, running in background...');
+        // 延迟 1 秒执行，确保工作区完全加载
+        setTimeout(() => {
+            runFixSilently();
+        }, 1000);
+    } else {
+        console.log('自动修复已关闭，用户需手动运行命令。 | Auto-fix is disabled.');
+    }
 }
 
 function deactivate() {}
