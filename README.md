@@ -1,4 +1,10 @@
-# SDCC VSCode Bug Fixer
+# SDCC VSCode Bug Fixer  (Experimental)
+**⚠️ 警告 / WARNING**  
+**This extension is currently in an experimental stage.** It works by forcibly modifying your `.vscode/c_cpp_properties.json`. 
+**Please backup your configuration or use Git before using this tool.** The author assumes no responsibility for any configuration loss. (Licensed under MIT).
+
+**本插件目前处于实验阶段。** 它通过强制修改 `.vscode/c_cpp_properties.json` 来工作。
+**请在使用前备份您的配置或使用 Git 进行版本控制。** 作者不对任何配置丢失负责（基于 MIT 协议免责）。
 
 一键修复 SDCC 方言在 VS Code 中的 IntelliSense 红线，零污染编译产物。
 One-click fix for SDCC dialect IntelliSense errors in VS Code, with zero impact on compiled output.
@@ -52,7 +58,7 @@ MIT
 
 ---
 
-## 🇨🇳 中文
+## 🇨🇳 中文  (实验性)
 
 ### 解决什么问题？
 用 PlatformIO + SDCC 开发 8051/STC 时，VS Code 的 C/C++ IntelliSense 不认识 SDCC 方言（`__sbit`、`__sfr`、`__interrupt(1)`、`__at(0x30)` 等），满屏红线；且因 `includePath` 缺失触发"熔断"，连真正的语法错误都不报。
