@@ -6,8 +6,8 @@
 **本插件目前处于实验阶段。** 它通过强制修改 `.vscode/c_cpp_properties.json` 来工作。
 **请在使用前备份您的配置或使用 Git 进行版本控制。** 作者不对任何配置丢失负责（基于 MIT 协议免责）。
 
-一键修复 SDCC 方言在 VS Code 中的 IntelliSense 红线，零污染编译产物。
-One-click fix for SDCC dialect IntelliSense errors in VS Code, with zero impact on compiled output.
+一键修复 SDCC 方言在 VS Code 中的 IntelliSense 红线。
+One-click fix for SDCC dialect IntelliSense errors in VS Code.
 
 ## 🇬🇧 English
 
